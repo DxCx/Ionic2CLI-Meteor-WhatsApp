@@ -2,9 +2,12 @@ import { Component } from "@angular/core";
 import { Alert, AlertController, NavController } from "ionic-angular";
 import { PhoneService } from "../../services/phone";
 import { ProfilePage } from "../profile/profile";
-import { MeteorObservable } from "meteor-rxjs";
 import { FbProfile } from "api/services/facebook";
 import { Profile } from "api/models";
+import { Observable } from 'rxjs';
+import gql from 'graphql-tag';
+
+import { Apollo } from 'apollo-angular';
 
 @Component({
   selector: 'facebook',
@@ -14,7 +17,8 @@ export class FacebookPage {
 
   constructor(private alertCtrl: AlertController,
               private phoneService: PhoneService,
-              private navCtrl: NavController) {
+              private navCtrl: NavController,
+              private client: Apollo) {
   }
 
   cancel(): void {
@@ -40,36 +44,52 @@ export class FacebookPage {
   }
 
   linkFacebook(): void {
-    this.phoneService.linkFacebook()
-      .then(() => {
-        MeteorObservable.call('getFbProfile').subscribe({
-          next: (fbProfile: FbProfile) => {
-            const pathname = (new URL(fbProfile.pictureUrl)).pathname;
-            const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
-            const description = {name: filename};
-            let profile: Profile = {name: fbProfile.name, pictureId: ""};
-            MeteorObservable.call('ufsImportURL', fbProfile.pictureUrl, description, 'pictures')
-              .map((value) => profile.pictureId = (<any>value)._id)
-              .switchMapTo(MeteorObservable.call('updateProfile', profile))
-              .subscribe({
-                next: () => {
-                  this.navCtrl.setRoot(ProfilePage, {}, {
-                    animate: true
-                  });
-                },
-                error: (e: Error) => {
-                  this.handleError(e);
-                }
-              });
-          },
-          error: (e: Error) => {
-            this.handleError(e);
+    Observable.fromPromise(
+      this.phoneService.linkFacebook()
+    )
+    .flatMap(() => this.client.query<{
+      myFacebookProfile: FbProfile,
+    }>({
+        query: gql`query FBProfile {
+          myFacebookProfile {
+            name
+            pictureUrl
           }
-        });
+        }`,
       })
-      .catch((e) => {
-        this.handleError(e);
+    )
+    .map((v) => v.data.myFacebookProfile)
+    .switchMap((fbProfile: FbProfile) => {
+      const pathname = (new URL(fbProfile.pictureUrl)).pathname;
+      const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
+      const description = {name: filename};
+      const p = new Promise((resolve, reject) => {
+        Meteor.call('ufsImportURL', fbProfile.pictureUrl, description, 'pictures', (e, v) => {
+          if ( e ) {
+            return reject(e);
+          }
+
+          return resolve(v);
+        });
       });
+
+      return Observable.fromPromise(p)
+      .map((value) => ({
+        name: fbProfile.name,
+        pictureId: (<any>value)._id,
+      }))
+      .switchMap((profile) => this.updateProfile(profile));
+    })
+    .subscribe({
+      complete: () => {
+        this.navCtrl.setRoot(ProfilePage, {}, {
+          animate: true
+        });
+      },
+      error: (e: Error) => {
+        this.handleError(e);
+      }
+    });
   }
 
   dontLink(alert: Alert): void {
@@ -94,5 +114,16 @@ export class FacebookPage {
     });
 
     alert.present();
+  }
+
+  private updateProfile(profile: Profile) {
+    return this.client.mutate<boolean>({
+      mutation: gql`mutation update($profile: InputProfile!){
+        updateProfile(profile: $profile)
+      }`,
+      variables: {
+        profile,
+      }
+    });
   }
 }

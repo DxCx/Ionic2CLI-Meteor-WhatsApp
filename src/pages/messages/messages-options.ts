@@ -1,7 +1,9 @@
 import { Component } from '@angular/core';
 import { AlertController, NavController, NavParams, ViewController } from 'ionic-angular';
-import { MeteorObservable } from 'meteor-rxjs';
 import { ChatsPage } from '../chats/chats';
+import gql from 'graphql-tag';
+
+import { Apollo } from 'apollo-angular';
 
 @Component({
   selector: 'messages-options',
@@ -12,8 +14,8 @@ export class MessagesOptionsComponent {
     public alertCtrl: AlertController,
     public navCtrl: NavController,
     public params: NavParams,
-    public viewCtrl: ViewController
-  ) {}
+    public viewCtrl: ViewController,
+    private client: Apollo) {}
 
   remove(): void {
     const alert = this.alertCtrl.create({
@@ -40,7 +42,14 @@ export class MessagesOptionsComponent {
   }
 
   private handleRemove(alert): void {
-    MeteorObservable.call('removeChat', this.params.get('chat')._id).subscribe({
+    this.client.mutate<boolean>({
+      mutation: gql`mutation removeChat($chatId: ID!) {
+        removeChat(chatId: $chatId)
+      }`,
+      variables: {
+        chatId: this.params.get('chat')._id,
+      }
+    }).subscribe({
       next: () => {
         alert.dismiss().then(() => {
           this.navCtrl.setRoot(ChatsPage, {}, {

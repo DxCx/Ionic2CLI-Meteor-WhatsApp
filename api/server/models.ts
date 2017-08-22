@@ -16,7 +16,9 @@ export enum MessageType {
 export interface Chat {
   _id?: string;
   title?: string;
-  picture?: string;
+  picture?: {
+    url: string;
+  };
   lastMessage?: Message;
   memberIds?: string[];
 }

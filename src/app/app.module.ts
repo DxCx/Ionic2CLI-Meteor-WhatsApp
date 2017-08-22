@@ -29,6 +29,9 @@ import { PhoneService } from '../services/phone';
 import { PictureService } from '../services/picture';
 import { MyApp } from './app.component';
 
+import { provideClient } from './client';
+import { ApolloModule } from 'apollo-angular';
+
 @NgModule({
   declarations: [
     MyApp,
@@ -49,6 +52,7 @@ import { MyApp } from './app.component';
     BrowserModule,
     IonicModule.forRoot(MyApp),
     MomentModule,
+    ApolloModule.withClient(provideClient),
     AgmCoreModule.forRoot({
       apiKey: 'AIzaSyAWoBdZHCNh5R-hB5S5ZZ2oeoYyfdDgniA'
     })
