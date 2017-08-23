@@ -1,4 +1,5 @@
 import { makeExecutableSchema } from 'graphql-schema-tools';
+import { MessageType } from './models';
 import * as moment from 'moment';
 import { _ } from 'meteor/underscore';
 import { Observable } from 'rxjs/Observable';
@@ -87,27 +88,127 @@ type Mutation {
 }
 `;
 
+const nonEmptyString = Match.Where((str) => {
+  check(str, String);
+  return str.length > 0;
+});
+
 const resolvers = {
   Mutation: {
     addChat(root, args, ctx) {
-      return this.call('addChat', args.receiverId)
-        .then(() => true);
+      if (!this.userId) {
+        throw new Meteor.Error('unauthorized',
+          'User must be logged-in to create a new chat');
+      }
+
+      check(args.receiverId, nonEmptyString);
+
+      if (args.receiverId === this.userId) {
+        throw new Meteor.Error('illegal-receiver',
+          'Receiver must be different than the current logged in user');
+      }
+
+      const chatExists = !!ctx.Chats.collection.find({
+        memberIds: { $all: [this.userId, args.receiverId] }
+      }).count();
+
+      if (chatExists) {
+        throw new Meteor.Error('chat-exists',
+          'Chat already exists');
+      }
+
+      const chat = {
+        memberIds: [this.userId, args.receiverId]
+      };
+
+      ctx.Chats.insert(chat);
+
+      return true;
     },
     removeChat(root, args, ctx) {
-      return this.call('removeChat', args.chatId)
-        .then(() => true);
+      if (!this.userId) {
+        throw new Meteor.Error('unauthorized',
+          'User must be logged-in to remove chat');
+      }
+
+      check(args.chatId, nonEmptyString);
+
+      const chatExists = !!ctx.Chats.collection.find(args.chatId).count();
+
+      if (!chatExists) {
+        throw new Meteor.Error('chat-not-exists',
+          'Chat doesn\'t exist');
+      }
+
+      ctx.Chats.remove(args.chatId);
+
+      return true;
     },
     updateProfile(root, args, ctx) {
-      return this.call('updateProfile', args.profile)
-        .then(() => true);
+      if (!this.userId) throw new Meteor.Error('unauthorized',
+        'User must be logged-in to create a new chat');
+
+      check(args.profile, {
+        name: nonEmptyString,
+        pictureId: Match.Maybe(nonEmptyString)
+      });
+
+      Meteor.users.update(this.userId, {
+        $set: {profile: args.profile}
+      });
+
+      return true;
     },
     addMessage(root, args, ctx) {
-      return this.call('addMessage', args.type.toLowerCase(), args.chatId, args.content)
-        .then(() => true);
+      if (!this.userId) throw new Meteor.Error('unauthorized',
+        'User must be logged-in to create a new chat');
+
+      check(args.type, Match.OneOf(String, [ MessageType.TEXT, MessageType.LOCATION ]));
+      check(args.chatId, nonEmptyString);
+      check(args.content, nonEmptyString);
+
+      const chatExists = !!ctx.Chats.collection.find(args.chatId).count();
+
+      if (!chatExists) {
+        throw new Meteor.Error('chat-not-exists',
+          'Chat doesn\'t exist');
+      }
+
+      const userId = this.userId;
+      const senderName = ctx.Users.collection.findOne({_id: userId}).profile.name;
+      const memberIds = ctx.Chats.collection.findOne({_id: args.chatId}).memberIds;
+      const tokens: string[] = ctx.Users.collection.find(
+        {
+          _id: {$in: memberIds, $nin: [userId]},
+          fcmToken: {$exists: true}
+        }
+      ).map((el) => el.fcmToken);
+
+      for (let token of tokens) {
+        console.log("Sending FCM notification");
+        ctx.fcmService.sendNotification({"title": `New message from ${senderName}`, "text": ctx.content}, token);
+      }
+
+      const result = {
+        messageId: ctx.Messages.collection.insert({
+          chatId: args.chatId,
+          senderId: this.userId,
+          content: args.content,
+          createdAt: new Date(),
+          type: args.type
+        })
+      };
+
+      return true;
     },
     saveFcmToken(root, args, ctx) {
-      return this.call('saveFcmToken', args.token)
-        .then(() => true);
+      if (!this.userId) {
+        throw new Meteor.Error('unauthorized', 'User must be logged-in to call this method');
+      }
+
+      check(args.token, nonEmptyString);
+      ctx.Users.collection.update({_id: this.userId}, {$set: {"fcmToken": args.token}});
+      return true;
     },
   },
   Query: {
