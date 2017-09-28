@@ -1,11 +1,11 @@
 import { Component, OnInit } from '@angular/core';
-import { Chats, Users, Pictures } from 'api/collections';
 import { User } from 'api/models';
 import { AlertController, Platform, ViewController } from 'ionic-angular';
-import { MeteorObservable } from 'meteor-rxjs';
-import { _ } from 'meteor/underscore';
-import { Observable, Subscription, BehaviorSubject } from 'rxjs';
+import { Observable, BehaviorSubject } from 'rxjs';
 import { PhoneService } from "../../services/phone";
+
+import gql from 'graphql-tag';
+import { Apollo } from 'apollo-angular';
 
 @Component({
   selector: 'new-chat',
@@ -13,9 +13,7 @@ import { PhoneService } from "../../services/phone";
 })
 export class NewChatComponent implements OnInit {
   searchPattern: BehaviorSubject<any>;
-  senderId: string;
   users: Observable<User[]>;
-  usersSubscription: Subscription;
   contacts: string[] = [];
   contactsPromise: Promise<void>;
 
@@ -23,14 +21,17 @@ export class NewChatComponent implements OnInit {
     private alertCtrl: AlertController,
     private viewCtrl: ViewController,
     private platform: Platform,
-    private phoneService: PhoneService
+    private phoneService: PhoneService,
+    private client: Apollo,
   ) {
-    this.senderId = Meteor.userId();
     this.searchPattern = new BehaviorSubject(undefined);
   }
 
   ngOnInit() {
-    this.observeSearchBar();
+    let platformParam = this.platform.is('android') ? "ANDROID" :
+      this.platform.is('ios') ? "IOS" : "WEB";
+    platformParam = this.platform.is('cordova') ? platformParam : "WEB";
+
     this.contactsPromise = this.phoneService.getContactsFromAddressbook()
       .then((phoneNumbers: string[]) => {
         this.contacts = phoneNumbers;
@@ -38,29 +39,54 @@ export class NewChatComponent implements OnInit {
       .catch((e: Error) => {
         console.error(e.message);
       });
+
+    this.users = this.observeSearchBar()
+      .withLatestFrom(this.contactsPromise)
+      .switchMap(([searchPattern, phoneBook]) => this.client.watchQuery<{
+        contacts: User[]
+      }>({
+        query: gql`query contacts(
+          $platform: PlatformType = WEB,
+          $searchPattern: String,
+          $phoneBook: [String!] = []) {
+            contacts(searchPattern: $searchPattern, phoneBook: $phoneBook) {
+              _id
+              name
+              picture {
+                url(platform: $platform)
+              }
+            }
+        }`,
+        variables: {
+          platform: platformParam,
+          searchPattern,
+          phoneBook,
+        },
+      })
+      .map((v) => v.data.contacts)
+      // Invoke map with an empty array in case no user found
+      .startWith([])
+      );
   }
 
   updateSubscription(newValue) {
     this.searchPattern.next(newValue);
   }
 
-  observeSearchBar(): void {
-    this.searchPattern.asObservable()
-    // Prevents the search bar from being spammed
-      .debounce(() => Observable.timer(1000))
-      .forEach(() => {
-        if (this.usersSubscription) {
-          this.usersSubscription.unsubscribe();
-        }
-
-        this.contactsPromise.then(() => {
-          this.usersSubscription = this.subscribeUsers();
-        });
-      });
+  observeSearchBar(): Observable<string> {
+    return this.searchPattern.asObservable()
+      .debounce(() => Observable.timer(1000));
   }
 
-  addChat(user): void {
-    MeteorObservable.call('addChat', user._id).subscribe({
+  addChat(user: User): void {
+    this.client.mutate<boolean>({
+      mutation: gql`mutation addChat($userId: ID!) {
+        addChat(receiverId: $userId)
+      }`,
+      variables: {
+        userId: user._id,
+      }
+    }).subscribe({
       next: () => {
         this.viewCtrl.dismiss();
       },
@@ -69,44 +95,6 @@ export class NewChatComponent implements OnInit {
           this.handleError(e);
         });
       }
-    });
-  }
-
-  subscribeUsers(): Subscription {
-    // Fetch all users matching search pattern
-    const subscription = MeteorObservable.subscribe('users', this.searchPattern.getValue(), this.contacts);
-    const autorun = MeteorObservable.autorun();
-
-    return Observable.merge(subscription, autorun).subscribe(() => {
-      this.users = this.findUsers();
-    });
-  }
-
-  findUsers(): Observable<User[]> {
-    // Find all belonging chats
-    return Chats.find({
-      memberIds: this.senderId
-    }, {
-      fields: {
-        memberIds: 1
-      }
-    })
-    // Invoke merge-map with an empty array in case no chat found
-    .startWith([])
-    .mergeMap((chats) => {
-      // Get all userIDs who we're chatting with
-      const receiverIds = _.chain(chats)
-        .pluck('memberIds')
-        .flatten()
-        .concat(this.senderId)
-        .value();
-
-      // Find all users which are not in belonging chats
-      return Users.find({
-        _id: { $nin: receiverIds }
-      })
-      // Invoke map with an empty array in case no user found
-      .startWith([]);
     });
   }
 
@@ -120,13 +108,5 @@ export class NewChatComponent implements OnInit {
     });
 
     alert.present();
-  }
-
-  getPic(pictureId): string {
-    let platform = this.platform.is('android') ? "android" :
-      this.platform.is('ios') ? "ios" : "";
-    platform = this.platform.is('cordova') ? platform : "";
-
-    return Pictures.getPictureUrl(pictureId, platform);
   }
 }

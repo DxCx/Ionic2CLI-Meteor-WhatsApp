@@ -1,6 +1,18 @@
 import { Meteor } from 'meteor/meteor';
 import { Accounts } from 'meteor/accounts-base';
+import { runGraphQLServer } from 'meteor-graphql-rxjs';
 declare const ServiceConfiguration: any;
+
+// GQL stuff
+import defaultQuery from './defaultQuery';
+import { schema } from './schema';
+
+import { Messages } from './collections/messages';
+import { Users } from './collections/users';
+import { Chats } from './collections/chats';
+import { Pictures } from './collections/pictures';
+import { facebookService } from "./services/facebook";
+// ------
 
 Meteor.startup(() => {
   if (Meteor.settings) {
@@ -18,4 +30,24 @@ Meteor.startup(() => {
       });
     }
   }
+});
+
+// TODO: Not sure we want to start GraphQL in here.
+// is there a better way?
+Meteor.startup(() => {
+  const sub = runGraphQLServer(Npm.require, {
+    schema,
+    graphiql: true,
+    graphiqlQuery: defaultQuery,
+    createContext: (payload) => ({
+      Messages,
+      Users,
+      Chats,
+      Pictures,
+      facebookService,
+    }),
+  })
+  .subscribe(undefined, (error) => {
+    console.error('GraphQL Server Failed:', error);
+  });
 });

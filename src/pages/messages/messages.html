@@ -17,14 +17,14 @@
   <ion-scroll scrollY="true" class="messages">
     <div *ngFor="let day of messagesDayGroups | async" class="day-wrapper">
       <div *ngFor="let message of day.messages" class="message-wrapper">
-        <div [class]="'message message-' + message.ownership">
-          <div *ngIf="message.type == 'text'" class="message-content message-content-text">{{message.content}}</div>
-          <div *ngIf="message.type == 'location'" class="message-content message-content-text">
+		  <div [class]="message.ownership ? 'message message-mine' : 'message message-other'">
+          <div *ngIf="message.type == 'TEXT'" class="message-content message-content-text">{{message.content}}</div>
+          <div *ngIf="message.type == 'LOCATION'" class="message-content message-content-text">
             <agm-map [zoom]="getLocation(message.content).zoom" [latitude]="getLocation(message.content).lat" [longitude]="getLocation(message.content).lng">
               <agm-marker [latitude]="getLocation(message.content).lat" [longitude]="getLocation(message.content).lng"></agm-marker>
             </agm-map>
           </div>
-          <img *ngIf="message.type == 'picture'" (click)="showPicture($event)" class="message-content message-content-picture" [src]="message.content">
+          <img *ngIf="message.type == 'PICTURE'" (click)="showPicture($event)" class="message-content message-content-picture" [src]="message.content">
 
           <span class="message-timestamp">{{ message.createdAt | amDateFormat: 'HH:mm' }}</span>
         </div>
