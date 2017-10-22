@@ -48,7 +48,9 @@ export class ChatsPage implements OnInit {
       variables: {
         platform: platformParam,
       },
-    }).map((v) => (v.data && v.data.allChats) || []);
+    })
+    .valueChanges
+    .map((v) => (v.data && v.data.allChats) || []);
 
     // Notifications
     if (this.platform.is('cordova')) {

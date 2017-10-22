@@ -73,6 +73,7 @@ export class MessagesPage implements OnInit, OnDestroy {
         chatId: this.selectedChat._id,
       },
     })
+    .valueChanges
     .map((v) => v.data && v.data.chat && v.data.chat.messages);
 
     const historyResults = this.client.watchQuery<{ chat: { messages: any[] } }>({
@@ -95,6 +96,7 @@ export class MessagesPage implements OnInit, OnDestroy {
         chatId: this.selectedChat._id,
       },
     })
+    .valueChanges
     .map((v) => (v.data && v.data.chat && v.data.chat.messages) || null);
 
     const copyDay = (d) => ({
@@ -131,7 +133,7 @@ export class MessagesPage implements OnInit, OnDestroy {
 
         day.today = msgByDay.today;
         msgByDay.messages.forEach((msg) => {
-          const hasMsg = _.find(day.messages, (histMsg) => histMsg._id === msg._id);
+          const hasMsg = _.find(day.messages as any[], (histMsg) => histMsg._id === msg._id);
           if ( hasMsg ) {
             return;
           }

@@ -29,8 +29,10 @@ import { PhoneService } from '../services/phone';
 import { PictureService } from '../services/picture';
 import { MyApp } from './app.component';
 
-import { provideClient } from './client';
-import { ApolloModule } from 'apollo-angular';
+import { WebSocketLink } from 'apollo-link-ws';
+import { InMemoryCache } from 'apollo-cache-inmemory'
+import { getNetworkInterface } from 'meteor-graphql-rxjs';
+import { ApolloModule, Apollo } from 'apollo-angular';
 
 @NgModule({
   declarations: [
@@ -52,7 +54,7 @@ import { ApolloModule } from 'apollo-angular';
     BrowserModule,
     IonicModule.forRoot(MyApp),
     MomentModule,
-    ApolloModule.withClient(provideClient),
+    ApolloModule,
     AgmCoreModule.forRoot({
       apiKey: 'AIzaSyAWoBdZHCNh5R-hB5S5ZZ2oeoYyfdDgniA'
     })
@@ -89,4 +91,11 @@ import { ApolloModule } from 'apollo-angular';
     FCM
   ]
 })
-export class AppModule {}
+export class AppModule {
+  constructor(apollo: Apollo) {
+    apollo.create({
+      link: new WebSocketLink(getNetworkInterface()),
+      cache: new InMemoryCache(),
+    });
+  }
+}

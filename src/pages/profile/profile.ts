@@ -59,6 +59,7 @@ export class ProfilePage implements OnInit {
         platform,
       },
     })
+    .valueChanges
     .map((v) => v.data.me)
     .do((v) => {
       // TODO: Abit Hacky need a better solution

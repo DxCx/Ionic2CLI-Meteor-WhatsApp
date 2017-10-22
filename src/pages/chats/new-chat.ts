@@ -63,6 +63,7 @@ export class NewChatComponent implements OnInit {
           phoneBook,
         },
       })
+      .valueChanges
       .map((v) => v.data.contacts)
       // Invoke map with an empty array in case no user found
       .startWith([])
